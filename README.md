@@ -20,12 +20,12 @@ Windows 上的《以撒的结合：忏悔+》存档与 Steam 成就可能出现�
     run.cmd -Mode Repair
 
 - Scan：只读扫描，不询问同步。
-- Interactive：默认模式；扫描后询问是否同步。
-- Repair：明确指定后直接补报差异项，适合自己写自动化脚本时使用。
+- Interactive：默认模式；扫描后询问是否同步。超过 `-MaxChanges` 阈值时，会提示预计耗时，并要求再输入待补报数量确认。
+- Repair：明确指定后直接补报差异项，适合自己写自动化脚本时使用；超过 `-MaxChanges` 时会停止，需显式调高该参数。
 
 自动定位失败时，可指定 -SteamRoot "D:\Steam"、-GameRoot "E:\SteamLibrary\steamapps\common\The Binding of Isaac Rebirth" 或 -SaveRoot "...\remote"。参数传给 run.cmd 即可。
 
-默认每项成就单独提交，并间隔 120 秒；可用 -DelaySeconds 调整，最小为 60 秒。一次最多补报 10 项；要处理更多项需显式指定 -MaxChanges。工具不修改游戏存档，也不清除 Steam 已有成就。
+默认每项成就单独提交，并间隔 120 秒；可用 `-DelaySeconds` 调整，最小为 60 秒。`-MaxChanges` 默认是 10：交互模式超过 10 项时需要再次确认数量，自动补报的 Repair 模式超过 10 项时需要显式指定更高的 `-MaxChanges`。工具不修改游戏存档，也不清除 Steam 已有成就。
 
 ## 差异含义
 

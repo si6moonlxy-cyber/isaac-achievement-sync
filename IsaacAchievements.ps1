@@ -248,6 +248,46 @@ function Get-AuditRows([IntPtr]$stats, [bool[]]$saveState) {
     return $rows.ToArray()
 }
 
+function Confirm-SteamSync {
+    param(
+        [string]$Mode,
+        [int]$Count,
+        [int]$MaxChanges,
+        [int]$DelaySeconds
+    )
+
+    if ($Count -eq 0) {
+        if ($Mode -eq 'Interactive') { Write-Host '没有需要同步到 Steam 的成就。' }
+        return $false
+    }
+    if ($Mode -eq 'Scan') { return $false }
+    if ($Mode -eq 'Repair') {
+        if ($Count -gt $MaxChanges) {
+            throw "待补报 $Count 项，超过 MaxChanges=$MaxChanges；未提交任何成就。确认后可显式指定 -MaxChanges $Count 重试。"
+        }
+        return $true
+    }
+
+    Write-Host 'Steam 同步会为这些成就写入现在的解锁时间，无法恢复原始完成时间。'
+    Write-Host "待补报 $Count 项。是否启用 Steam 同步？输入 Y 确认，直接回车跳过。"
+    $answer = Read-Host
+    if ($answer -notmatch '^(?i:y|yes)$') {
+        Write-Host '已跳过 Steam 同步。'
+        return $false
+    }
+
+    if ($Count -gt $MaxChanges) {
+        $minutes = [Math]::Ceiling((8 * $Count + $DelaySeconds * ($Count - 1)) / 60)
+        Write-Host "待补报 $Count 项，超过单批阈值 MaxChanges=$MaxChanges；按当前间隔预计至少约 $minutes 分钟。"
+        $confirmation = Read-Host "请输入 $Count 再次确认；直接回车跳过"
+        if ($confirmation.Trim() -cne $Count.ToString()) {
+            Write-Host '已跳过 Steam 同步，未提交任何成就。'
+            return $false
+        }
+    }
+    return $true
+}
+
 try {
     $user = [IsaacSteamApi]::User()
     if ($user -eq [IntPtr]::Zero) { throw '无法识别当前 Steam 账户。' }
@@ -280,21 +320,8 @@ try {
     $rows | Export-Csv -LiteralPath $reportPath -NoTypeInformation -Encoding UTF8
     Write-Output "报告：$reportPath"
 
-    $shouldRepair = $Mode -eq 'Repair'
-    if ($Mode -eq 'Interactive' -and $missingSteam.Count -gt 0) {
-        Write-Output 'Steam 同步会为这些成就写入现在的解锁时间，无法恢复原始完成时间。'
-        Write-Output '是否启用 Steam 同步？输入 Y 确认，直接回车跳过。'
-        $answer = Read-Host
-        $shouldRepair = $answer -match '^(?i:y|yes)$'
-        if (-not $shouldRepair) { Write-Output '已跳过 Steam 同步。' }
-    }
-    if ($Mode -eq 'Interactive' -and $missingSteam.Count -eq 0) {
-        Write-Output '没有需要同步到 Steam 的成就。'
-    }
+    $shouldRepair = Confirm-SteamSync -Mode $Mode -Count $missingSteam.Count -MaxChanges $MaxChanges -DelaySeconds $DelaySeconds
     if ($shouldRepair -and $missingSteam.Count -gt 0) {
-        if ($missingSteam.Count -gt $MaxChanges) {
-            throw "待补报 $($missingSteam.Count) 项，超过 MaxChanges=$MaxChanges；未提交任何成就。"
-        }
         for ($i = 0; $i -lt $missingSteam.Count; $i++) {
             $id = $missingSteam[$i].Id
             $name = [string]$id
