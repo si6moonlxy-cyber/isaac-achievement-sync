@@ -39,4 +39,15 @@ Steam 的接口只接受新的解锁状态，不能指定过去的解锁时间�
 
 ## 适用范围
 
-本工具针对 Windows Steam 版《忏悔+》目前的 641 项成就和 ISAACNGSAVE09R 存档格式。它会校验存档校验值、Steam 当前账户和成就总数；游戏版本或存档格式变化时会停止，避免误报。它使用游戏安装目录自带的 steam_api.dll，仓库不包含 Steam DLL、游戏文件、个人存档或账户数据。
+本工具针对 Windows Steam 版《忏悔+》目前的 641 项成就，支持旧版 `ISAACNGSAVE09R` 和正式版 `ISAACNGSAVE10R` 存档格式。已用本机正式版 J510（Steam Build ID `26774712`）的当前存档验证；扫描时会显示实际读取的格式，无需转换存档或恢复旧备份。
+
+工具会校验存档校验值、成就块 ID/长度/条目数、状态值、Steam 当前账户和成就总数；未知格式或数据结构不符时会停止，避免误报。它使用游戏安装目录自带的 steam_api.dll，仓库不包含 Steam DLL、游戏文件、个人存档或账户数据。
+
+## 开发验证
+
+以下测试只读取脚本中的解析和确认函数，不会初始化 Steam 或提交成就：
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File tests\SaveFormat.Tests.ps1
+    powershell -NoProfile -ExecutionPolicy Bypass -File tests\SyncPolicy.Tests.ps1
+
+存档测试使用内存中生成的数据，覆盖 09R/10R、未知格式、校验值损坏、块结构不符和异常状态值。可添加 `-SaveRoot "...\remote"` 参数，只读验证本机当前的三个存档槽。

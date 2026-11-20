@@ -132,9 +132,39 @@ public static class IsaacSaveChecksum {
 '@
 Add-Type -TypeDefinition $crcSource
 
+function Read-SaveAchievements([byte[]]$data, [string]$path) {
+    if ($data.Length -lt ($AchievementOffset + $MaxAchievementId + 1 + 4)) {
+        throw "存档长度异常：$path"
+    }
+    $header = [Text.Encoding]::ASCII.GetString($data, 0, 16)
+    if ($header -cnotin @('ISAACNGSAVE09R  ', 'ISAACNGSAVE10R  ')) {
+        throw "不支持的存档格式 '$($header.Trim())'：$path；支持 ISAACNGSAVE09R 和 ISAACNGSAVE10R。"
+    }
+    if (-not [IsaacSaveChecksum]::IsValid($data)) { throw "存档校验值不匹配：$path" }
+
+    # Both supported Repentance+ formats store block #1 at byte 20:
+    # block ID, byte length, entry count, then one byte per achievement (including #0).
+    $blockId = [BitConverter]::ToInt32($data, 20)
+    $chunkLength = [BitConverter]::ToInt32($data, 24)
+    $entryCount = [BitConverter]::ToInt32($data, 28)
+    $expectedCount = $MaxAchievementId + 1
+    if ($blockId -ne 1 -or $chunkLength -ne $expectedCount -or $entryCount -ne $expectedCount -or
+        ($AchievementOffset + $chunkLength) -gt ($data.Length - 4)) {
+        throw "成就数据块结构不符：$path；ID=$blockId，长度=$chunkLength，条目数=$entryCount，预期 $expectedCount。"
+    }
+    $state = New-Object 'bool[]' $expectedCount
+    for ($id = 0; $id -le $MaxAchievementId; $id++) {
+        $value = $data[$AchievementOffset + $id]
+        if ($value -gt 1) { throw "成就 #$id 的状态值异常：$value；$path" }
+        if ($id -gt 0) { $state[$id] = $value -eq 1 }
+    }
+    return [pscustomobject]@{ State = $state; Format = $header.Trim() }
+}
+
 function Read-GameSaves([string]$root) {
     $state = New-Object 'bool[]' ($MaxAchievementId + 1)
     $paths = @()
+    $formats = @()
     for ($slot = 1; $slot -le 3; $slot++) {
         $path = Join-Path $root "rep+persistentgamedata$slot.dat"
         if (-not (Test-Path -LiteralPath $path)) {
@@ -142,18 +172,15 @@ function Read-GameSaves([string]$root) {
         }
         if (-not (Test-Path -LiteralPath $path)) { continue }
         $data = [IO.File]::ReadAllBytes($path)
-        if ($data.Length -le ($AchievementOffset + $MaxAchievementId)) { throw "存档长度异常：$path" }
-        if ([Text.Encoding]::ASCII.GetString($data, 0, 16) -ne 'ISAACNGSAVE09R  ') { throw "存档格式不符：$path" }
-        if (-not [IsaacSaveChecksum]::IsValid($data)) { throw "存档校验值不匹配：$path" }
-        $chunkLength = [BitConverter]::ToInt32($data, 24)
-        if ($chunkLength -lt ($MaxAchievementId + 1)) { throw "成就数据块长度异常：$path" }
+        $parsed = Read-SaveAchievements $data $path
         $paths += $path
+        $formats += $parsed.Format
         for ($id = 1; $id -le $MaxAchievementId; $id++) {
-            if ($data[$AchievementOffset + $id] -ne 0) { $state[$id] = $true }
+            if ($parsed.State[$id]) { $state[$id] = $true }
         }
     }
     if ($paths.Count -eq 0) { throw "没有找到《忏悔+》存档：$root" }
-    return [pscustomobject]@{ State = $state; Paths = $paths }
+    return [pscustomobject]@{ State = $state; Paths = $paths; Formats = @($formats | Select-Object -Unique) }
 }
 
 $escapedApiDll = $ApiDll.Replace('"', '""')
@@ -307,6 +334,7 @@ try {
     Write-Output "Steam 目录：$SteamRoot"
     Write-Output "游戏目录：$GameRoot"
     Write-Output "存档目录：$SaveRoot"
+    Write-Output "存档格式：$($save.Formats -join ', ')"
     Write-Output "已扫描 $($rows.Count) 项；存档已解锁 $(@($rows | Where-Object SaveUnlocked).Count) 项；Steam 已解锁 $(@($rows | Where-Object SteamUnlocked).Count) 项。"
     Write-Output "仅存档解锁：$($missingSteam.Count) 项；仅 Steam 解锁：$($missingSave.Count) 项。"
     foreach ($row in ($missingSteam + $missingSave)) {
